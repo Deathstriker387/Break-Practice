@@ -21,10 +21,10 @@ public class LookAtMouse : MonoBehaviour
     [Header("Rope Physics")]
     [SerializeField] private LayerMask _collisionMask;
     [SerializeField] private float _collisionRadius = 0.1f;
-    [SerializeField] private float _constraintStiffness = 0.95f; // How taut the rope is (0.9-1.0 recommended)
+    [SerializeField] private float _constraintStiffness = 0.98f; // How taut the rope is (0.9-1.0 recommended)
 
     [Header("Rope Constraints")]
-    [SerializeField] private int _numOfConstraintRuns = 80;
+    [SerializeField] private int _numOfConstraintRuns = 15; //With 50 segments � 80 runs = 4,000 constraint calculations per frame, Reduce to 10-20 iterations, increase stiffness to compensate
     [SerializeField] private int _collisionSegmentInterval = 2;
 
     [Header("Collision Settings")]
@@ -57,6 +57,13 @@ public class LookAtMouse : MonoBehaviour
     // Optimization caches
     private Vector2 lastPlayerPos;
     private Vector2 lastHookPos;
+
+    // Non-alloc collision buffer
+    private Collider2D[] _collisionBuffer = new Collider2D[8];
+    private ContactFilter2D _ropeCollisionFilter;
+
+    // Add a flag for manual player pulling
+    private bool isPullingTowardsHook = false; // activated once by 
 
     public struct RopeSegment
     {
@@ -125,22 +132,16 @@ public class LookAtMouse : MonoBehaviour
                 Debug.Log($"Found player script: {playerMovementScript.GetType().Name}");
             }
         }
+
+        // Initialize the filter for rope collisions
+        _ropeCollisionFilter = new ContactFilter2D();
+        _ropeCollisionFilter.SetLayerMask(_collisionMask);
+        _ropeCollisionFilter.useTriggers = false;
     }
 
     private void LAMouse()
     {
-        Vector2 direction;
-
-        if (retracting)
-        {
-            // When retracting, face backward (opposite of movement direction)
-            direction = hookRb.position - (Vector2)playerTransform.position;
-        }
-        else
-        {
-            // When shooting, face toward target
-            direction = targetPosition - hookRb.position;
-        }
+        Vector2 direction = targetPosition - (Vector2)m_transform.position; // always face target
 
         if (direction == Vector2.zero) return;
 
@@ -166,17 +167,28 @@ public class LookAtMouse : MonoBehaviour
             }
         }
 
-        // Pull player towards hook when grappled
-        if (isPullingPlayer && isGrappled && playerRb != null)
+        // --- Automatic pull check ---
+        if (isGrappled && !isPullingTowardsHook && playerRb != null)
+        {
+            float distance = Vector2.Distance(playerRb.position, hookRb.position);
+            if (distance > maxLineLength)
+            {
+                isPullingTowardsHook = true; // start automatic pull
+                if (disablePlayerControlDuringPull && playerMovementScript != null)
+                    playerMovementScript.enabled = false;
+
+                Debug.Log("Automatic pull triggered!");
+            }
+        }
+        // --- End automatic pull check ---
+
+        // Pull player towards hook if active
+        if (isPullingTowardsHook && playerRb != null && isGrappled)
         {
             PullPlayerTowardsHook();
             AdjustRopeWhilePulling();
         }
-        else if (isPullingPlayer)
-        {
-            // Debug why pulling isn't happening
-            Debug.LogWarning($"Pull blocked - isPulling: {isPullingPlayer}, isGrappled: {isGrappled}, playerRb: {playerRb != null}");
-        }
+
     }
 
     private void HandleMovement()
@@ -187,9 +199,9 @@ public class LookAtMouse : MonoBehaviour
 
         Vector2 currentPos = hookRb.position;
         Vector2 newPos = Vector2.MoveTowards(
-            currentPos,
-            targetPosition,
-            moveSpeed * Time.fixedDeltaTime
+        currentPos,
+        targetPosition,
+        moveSpeed * Time.fixedDeltaTime
         );
 
         hookRb.MovePosition(newPos);
@@ -244,8 +256,8 @@ public class LookAtMouse : MonoBehaviour
     {
         float distanceTraveled = Vector2.Distance((Vector2)playerTransform.position, hookRb.position);
         int targetSegments = Mathf.Min(
-            Mathf.FloorToInt(distanceTraveled / _ropeSegmentLength),
-            _numOfRopeSegments
+        Mathf.FloorToInt(distanceTraveled / _ropeSegmentLength),
+        _numOfRopeSegments
         );
 
         // Add new segments as hook extends
@@ -275,8 +287,8 @@ public class LookAtMouse : MonoBehaviour
         // Keep rope stretched between player and hook as it retracts
         float distanceTraveled = Vector2.Distance((Vector2)playerTransform.position, hookRb.position);
         int targetSegments = Mathf.Max(
-            Mathf.FloorToInt(distanceTraveled / _ropeSegmentLength),
-            2 // Minimum 2 segments to show rope
+        Mathf.FloorToInt(distanceTraveled / _ropeSegmentLength),
+        2 // Minimum 2 segments to show rope
         );
 
         // Remove segments from the hook end as it gets closer
@@ -347,32 +359,36 @@ public class LookAtMouse : MonoBehaviour
 
     private void HandleRopeCollisions()
     {
-        // Skip first and last segments (anchored)
         for (int i = 1; i < _activeSegments - 1; i++)
         {
             RopeSegment segment = _ropeSegments[i];
 
-            Collider2D[] colliders = Physics2D.OverlapCircleAll(
-                segment.CurrentPosition,
-                _collisionRadius,
-                _collisionMask
+            int hitCount = Physics2D.OverlapCircle(
+            segment.CurrentPosition,
+            _collisionRadius,
+            _ropeCollisionFilter,
+            _collisionBuffer
             );
 
-            foreach (Collider2D collider in colliders)
+            for (int j = 0; j < hitCount; j++)
             {
+                Collider2D collider = _collisionBuffer[j];
+
                 Vector2 closestPoint = collider.ClosestPoint(segment.CurrentPosition);
                 float distance = Vector2.Distance(segment.CurrentPosition, closestPoint);
 
                 if (distance < _collisionRadius)
                 {
-                    Vector2 normal = (segment.CurrentPosition - closestPoint).normalized;
+                    Vector2 normal = segment.CurrentPosition - closestPoint;
 
-                    if (normal == Vector2.zero)
+                    if (normal.sqrMagnitude < 0.0001f)
                     {
-                        normal = (segment.CurrentPosition - (Vector2)collider.transform.position).normalized;
+                        normal = segment.CurrentPosition - (Vector2)collider.bounds.center;
                     }
 
+                    normal.Normalize();
                     float depth = _collisionRadius - distance;
+
                     segment.CurrentPosition += normal * depth;
                 }
             }
@@ -411,50 +427,60 @@ public class LookAtMouse : MonoBehaviour
 
     private void PullPlayerTowardsHook()
     {
-        Vector2 playerPos = playerRb.position;
-        Vector2 hookPos = hookRb.position;
-        Vector2 directionToHook = (hookPos - playerPos).normalized;
-        float distanceToHook = Vector2.Distance(playerPos, hookPos);
+        float currentDistance = Vector2.Distance(playerRb.position, hookRb.position);
+        float minDistance = 3f;
 
-        // Stop pulling when player gets very close to hook
-        if (distanceToHook < 1f)
+        if (currentDistance <= minDistance)
         {
             isPullingPlayer = false;
+            Debug.Log("Pull stopped - reached minimum distance");
             return;
         }
 
-        // Apply force towards hook
-        if (maintainMomentum)
+        Vector2 direction = (hookRb.position - playerRb.position).normalized;
+
+        // SIMPLE AND EFFECTIVE APPROACH:
+        // Use direct force towards the hook with speed limiting
+
+        // Calculate desired speed based on distance
+        float desiredSpeed = Mathf.Min(pullSpeed, (currentDistance - minDistance) * 2f);
+
+        // Get current velocity component towards the hook
+        float currentSpeedTowardsHook = Vector2.Dot(playerRb.linearVelocity, direction);
+
+        // Calculate how much speed we need to add
+        float speedNeeded = desiredSpeed - currentSpeedTowardsHook;
+
+        // Apply force to achieve the needed speed
+        if (speedNeeded > 0)
         {
-            // Add force to existing momentum (swinging feel)
-            playerRb.AddForce(directionToHook * pullForce, ForceMode2D.Force);
-        }
-        else
-        {
-            // Direct pull (more controlled, less physics-based)
-            Vector2 targetVelocity = directionToHook * pullSpeed;
-            playerRb.velocity = Vector2.Lerp(playerRb.velocity, targetVelocity, 0.1f);
+            Vector2 force = direction * speedNeeded * playerRb.mass * 5f; // Multiplier for responsiveness
+            playerRb.AddForce(force, ForceMode2D.Force);
+
+            Debug.Log($"Pulling - Dist: {currentDistance}, Speed: {desiredSpeed}, Force: {force.magnitude}");
         }
     }
+
 
     private void AdjustRopeWhilePulling()
     {
         // Adjust rope segments as player moves closer to hook
         float distanceToHook = Vector2.Distance(playerTransform.position, hookRb.position);
         int targetSegments = Mathf.Max(
-            Mathf.FloorToInt(distanceToHook / _ropeSegmentLength),
-            2 // Minimum 2 segments
+        Mathf.FloorToInt(distanceToHook / _ropeSegmentLength),
+        2 // Minimum 2 segments
         );
 
-        // Remove segments as player gets closer
+        // FIX: Remove from hook end (not player end)
         while (_activeSegments > targetSegments && _activeSegments > 2)
         {
-            _ropeSegments.RemoveAt(0); // Remove from player end
+            _ropeSegments.RemoveAt(_ropeSegments.Count - 1); // Remove from END (hook side)
             _activeSegments--;
         }
 
         _lineRenderer.positionCount = _activeSegments;
     }
+
 
     // Collision detection for grapple points
     private void OnTriggerEnter2D(Collider2D other)
@@ -476,7 +502,7 @@ public class LookAtMouse : MonoBehaviour
 
     void Update()
     {
-        // Draw rope every frame
+        // draw rope every frame
         DrawRope();
 
         // LEFT CLICK to Shoot
@@ -518,5 +544,39 @@ public class LookAtMouse : MonoBehaviour
             playerRb.AddForce(testForce, ForceMode2D.Force);
             Debug.Log($"DEBUG: Applied test force {testForce} - Current velocity: {playerRb.linearVelocity}");
         }
+
+        // Press X to start one-time pull
+        if (Keyboard.current.xKey.wasPressedThisFrame)
+        {
+            if (isGrappled && !isPullingTowardsHook)
+            {
+                isPullingTowardsHook = true;
+
+                // Optionally disable player movement during pull
+                if (disablePlayerControlDuringPull && playerMovementScript != null)
+                    playerMovementScript.enabled = false;
+
+                Debug.Log("Player started moving towards hook!");
+            }
+        }
+
+        // RIGHT CLICK to retract (or release while being pulled)
+        if (Mouse.current.rightButton.wasPressedThisFrame)
+        {
+            if (!retracting)
+            {
+                StartRetract();
+
+                // Stop pulling
+                isPullingTowardsHook = false;
+
+                // Re-enable player movement
+                if (disablePlayerControlDuringPull && playerMovementScript != null)
+                    playerMovementScript.enabled = true;
+
+                Debug.Log("Pull canceled by retract!");
+            }
+        }
+
     }
 }

@@ -11,6 +11,20 @@
     {
       "Orientation": 0,
       "VerticalTabListWidth": 256,
+      "DocumentGroups": []
+    },
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "FloatingWindowState": {
+        "Id": "45c65ca6-e18b-4d8e-999a-64eed00d6f2b",
+        "Display": 0,
+        "X": 170,
+        "Y": 187,
+        "Width": 1261,
+        "Height": 682,
+        "WindowState": 0
+      },
       "DocumentGroups": [
         {
           "DockedWidth": 200,
@@ -24,7 +38,7 @@
               "RelativeDocumentMoniker": "Assets\\Scripts\\LookAtMouse.cs",
               "ToolTip": "W:\\Game-Programming\\My project test\\Assets\\Scripts\\LookAtMouse.cs",
               "RelativeToolTip": "Assets\\Scripts\\LookAtMouse.cs",
-              "ViewState": "AgIAAG8AAAAAAAAAAAAiwJgAAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAACMAAAAAAAAAAAArwDAAAAAcAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2026-01-08T13:28:21.708Z",
               "EditorCaption": ""
