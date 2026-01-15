@@ -32,7 +32,7 @@ public class enemybuletsript : MonoBehaviour
     }
 
     void OnTriggerEnter2D(Collider2D other) {
-        if (other.CompareTag("Player"))
+        if (other.tag!="Enemy")
         {
             Destroy(gameObject);
         }

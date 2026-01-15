@@ -5,6 +5,7 @@ TagManager:
   serializedVersion: 3
   tags:
   - New tag
+  - Enemy
   layers:
   - Default
   - TransparentFX
@@ -14,7 +15,7 @@ TagManager:
   - UI
   - ground
   - GrapplePoint
-  - 
+  - Rope
   - 
   - 
   - 
