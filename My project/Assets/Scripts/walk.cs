@@ -2,6 +2,9 @@ using UnityEngine;
 
 public class walk : MonoBehaviour
 {
+    public Vector2 ropeHook;
+    public float swingForce = 4f;
+
     public float speed = 1f;
     public float jumpSpeed = 3f;
     public bool groundCheck;
@@ -32,27 +35,60 @@ public class walk : MonoBehaviour
     {
         if (horizontalInput < 0f || horizontalInput > 0f)
         {
-           // animator.SetFloat("Speed", Mathf.Abs(horizontalInput));
-            playerSprite.flipX = horizontalInput < 0f;
-
-            if (groundCheck)
+            //animator.SetFloat("Speed", Mathf.Abs(horizontalInput));
+           playerSprite.flipX = horizontalInput < 0f;
+            if (isSwinging)
             {
-                var groundForce = speed * 2f;
-                rBody.AddForce(new Vector2((horizontalInput * groundForce - rBody.linearVelocity.x) * groundForce, 0));
-                rBody.linearVelocity = new Vector2(rBody.linearVelocity.x, rBody.linearVelocity.y);
+             //   animator.SetBool("IsSwinging", true);
+
+                // 1 - Get a normalized direction vector from the player to the hook point
+                var playerToHookDirection = (ropeHook - (Vector2)transform.position).normalized;
+
+                // 2 - Inverse the direction to get a perpendicular direction
+                Vector2 perpendicularDirection;
+                if (horizontalInput < 0)
+                {
+                    perpendicularDirection = new Vector2(-playerToHookDirection.y, playerToHookDirection.x);
+                    var leftPerpPos = (Vector2)transform.position - perpendicularDirection * -2f;
+                    Debug.DrawLine(transform.position, leftPerpPos, Color.green, 0f);
+                }
+                else
+                {
+                    perpendicularDirection = new Vector2(playerToHookDirection.y, -playerToHookDirection.x);
+                    var rightPerpPos = (Vector2)transform.position + perpendicularDirection * 2f;
+                    Debug.DrawLine(transform.position, rightPerpPos, Color.green, 0f);
+                }
+
+                var force = perpendicularDirection * swingForce;
+                rBody.AddForce(force, ForceMode2D.Force);
+            }
+            else
+            {
+                //animator.SetBool("IsSwinging", false);
+                if (groundCheck)
+                {
+                    var groundForce = speed * 2f;
+                    rBody.AddForce(new Vector2((horizontalInput * groundForce - rBody.linearVelocity.x) * groundForce, 0));
+                    rBody.linearVelocity = new Vector2(rBody.linearVelocity.x, rBody.linearVelocity.y);
+                }
             }
         }
         else
         {
+           // animator.SetBool("IsSwinging", false);
            // animator.SetFloat("Speed", 0f);
         }
 
-        if (!groundCheck) return;
-
-        isJumping = jumpInput > 0f;
-        if (isJumping)
+        if (!isSwinging)
         {
-            rBody.linearVelocity = new Vector2(rBody.linearVelocity.x, jumpSpeed);
+            if (!groundCheck) return;
+
+            isJumping = jumpInput > 0f;
+            if (isJumping)
+            {
+                rBody.linearVelocity = new Vector2(rBody.linearVelocity.x, jumpSpeed);
+            }
         }
     }
+
 }

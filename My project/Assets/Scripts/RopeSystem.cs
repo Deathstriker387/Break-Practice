@@ -6,6 +6,9 @@ public class RopeSystem : MonoBehaviour
 {
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     // 1
+    public float climbSpeed = 3f;
+    private bool isColliding;
+
     private bool distanceSet;
     private Dictionary<Vector2, int> wrapPointsLookup = new Dictionary<Vector2, int>();
 
@@ -53,9 +56,14 @@ public class RopeSystem : MonoBehaviour
         // 6
         if (!ropeAttached)
         {
+            playerMovement.isSwinging = false;
+
         }
         else
         {// 1
+            playerMovement.isSwinging = true;
+            playerMovement.ropeHook = ropePositions.Last();
+
             if (ropePositions.Count > 0)
             {
                 // 2
@@ -88,6 +96,8 @@ public class RopeSystem : MonoBehaviour
         }
         HandleInput(aimDirection);
         UpdateRopePositions();
+        HandleRopeLength();
+
 
 
     }
@@ -219,6 +229,27 @@ public class RopeSystem : MonoBehaviour
         return orderedDictionary.Any() ? orderedDictionary.First().Value : Vector2.zero;
     }
 
+    private void HandleRopeLength()
+    {
+        // 1
+        if (Input.GetAxis("Vertical") >= 1f && ropeAttached && !isColliding)
+        {
+            ropeJoint.distance -= Time.deltaTime * climbSpeed;
+        }
+        else if (Input.GetAxis("Vertical") < 0f && ropeAttached)
+        {
+            ropeJoint.distance += Time.deltaTime * climbSpeed;
+        }
+    }
 
+    void OnTriggerStay2D(Collider2D colliderStay)
+    {
+        isColliding = true;
+    }
+
+    private void OnTriggerExit2D(Collider2D colliderOnExit)
+    {
+        isColliding = false;
+    }
 
 }
