@@ -2,93 +2,127 @@ using UnityEngine;
 
 public class walk : MonoBehaviour
 {
+    [Header("Rope - DO NOT MODIFY")]
     public Vector2 ropeHook;
-    public float swingForce = 4f;
-
-    public float speed = 1f;
-    public float jumpSpeed = 3f;
-    public bool groundCheck;
     public bool isSwinging;
-    private SpriteRenderer playerSprite;
-    private Rigidbody2D rBody;
+
+    [Header("Movement")]
+    public float moveSpeed = 7f;
+
+    [Header("Jump")]
+    public float jumpForce = 15f;
+    public float jumpSustainForce = 1.2f;
+    public float jumpSustainTime = 0.12f;
+    public float jumpCutMultiplier = 0.5f;
+
+    [Header("Forgiveness")]
+    public float coyoteTime = 0.1f;      // late jump forgiveness
+    public float jumpBufferTime = 0.1f;  // early input forgiveness
+
+    [Header("Ground Probe")]
+    public Transform groundCheckPoint;
+    public float groundCheckRadius = 0.1f;
+    public LayerMask groundLayer;
+
+    private Rigidbody2D rb;
+    private float moveInput;
+
+    private bool isGrounded;
     private bool isJumping;
-   // private Animator animator;
-    private float jumpInput;
-    private float horizontalInput;
+    private bool jumpUsed;          // single jump per grounded session
+
+    private float coyoteTimer;
+    private float bufferTimer;
+    private float sustainTimer;
 
     void Awake()
     {
-        playerSprite = GetComponent<SpriteRenderer>();
-        rBody = GetComponent<Rigidbody2D>();
-      //  animator = GetComponent<Animator>();
+        rb = GetComponent<Rigidbody2D>();
     }
 
     void Update()
     {
-        jumpInput = Input.GetAxis("Jump");
-        horizontalInput = Input.GetAxis("Horizontal");
-        var halfHeight = transform.GetComponent<SpriteRenderer>().bounds.extents.y;
-        groundCheck = Physics2D.Raycast(new Vector2(transform.position.x, transform.position.y - halfHeight - 0.04f), Vector2.down, 0.025f);
+        moveInput = Input.GetAxisRaw("Horizontal");
+
+        // --- Jump buffer ---
+        bufferTimer -= Time.deltaTime;
+        if (Input.GetKeyDown(KeyCode.Space))
+            bufferTimer = jumpBufferTime;
+
+        // --- Execute jump if allowed ---
+        if (bufferTimer > 0 && coyoteTimer > 0 && !isJumping && !jumpUsed)
+        {
+            Jump();
+        }
+
+        // --- Short jump on release ---
+        if (Input.GetKeyUp(KeyCode.Space))
+        {
+            JumpCut();
+        }
     }
 
     void FixedUpdate()
     {
-        if (horizontalInput < 0f || horizontalInput > 0f)
+        // --- Ground probe ---
+        isGrounded = Physics2D.OverlapCircle(groundCheckPoint.position, groundCheckRadius, groundLayer);
+
+        // --- Reset jumpUsed whenever grounded ---
+        if (isGrounded)
         {
-            //animator.SetFloat("Speed", Mathf.Abs(horizontalInput));
-           playerSprite.flipX = horizontalInput < 0f;
-            if (isSwinging)
-            {
-             //   animator.SetBool("IsSwinging", true);
-
-                // 1 - Get a normalized direction vector from the player to the hook point
-                var playerToHookDirection = (ropeHook - (Vector2)transform.position).normalized;
-
-                // 2 - Inverse the direction to get a perpendicular direction
-                Vector2 perpendicularDirection;
-                if (horizontalInput < 0)
-                {
-                    perpendicularDirection = new Vector2(-playerToHookDirection.y, playerToHookDirection.x);
-                    var leftPerpPos = (Vector2)transform.position - perpendicularDirection * -2f;
-                    Debug.DrawLine(transform.position, leftPerpPos, Color.green, 0f);
-                }
-                else
-                {
-                    perpendicularDirection = new Vector2(playerToHookDirection.y, -playerToHookDirection.x);
-                    var rightPerpPos = (Vector2)transform.position + perpendicularDirection * 2f;
-                    Debug.DrawLine(transform.position, rightPerpPos, Color.green, 0f);
-                }
-
-                var force = perpendicularDirection * swingForce;
-                rBody.AddForce(force, ForceMode2D.Force);
-            }
-            else
-            {
-                //animator.SetBool("IsSwinging", false);
-                if (groundCheck)
-                {
-                    var groundForce = speed * 2f;
-                    rBody.AddForce(new Vector2((horizontalInput * groundForce - rBody.linearVelocity.x) * groundForce, 0));
-                    rBody.linearVelocity = new Vector2(rBody.linearVelocity.x, rBody.linearVelocity.y);
-                }
-            }
+            jumpUsed = false;       // <-- key fix
+            isJumping = false;
+            coyoteTimer = coyoteTime;
         }
         else
         {
-           // animator.SetBool("IsSwinging", false);
-           // animator.SetFloat("Speed", 0f);
+            coyoteTimer -= Time.fixedDeltaTime;
         }
 
+        // --- Horizontal movement ---
         if (!isSwinging)
         {
-            if (!groundCheck) return;
-
-            isJumping = jumpInput > 0f;
-            if (isJumping)
+            if (isGrounded)
             {
-                rBody.linearVelocity = new Vector2(rBody.linearVelocity.x, jumpSpeed);
+                // Sharp ground control (Hollow Knight style)
+                rb.linearVelocity = new Vector2(moveInput * moveSpeed, rb.linearVelocity.y);
             }
+            else
+            {
+                // Air control without killing momentum
+                rb.AddForce(Vector2.right * moveInput * moveSpeed * 0.6f, ForceMode2D.Force);
+            }
+        }
+
+        // --- Jump sustain ---
+        if (isJumping && sustainTimer > 0)
+        {
+            rb.AddForce(Vector2.up * jumpSustainForce, ForceMode2D.Force);
+            sustainTimer -= Time.fixedDeltaTime;
         }
     }
 
+    void Jump()
+    {
+        // Reset vertical velocity for consistent jump
+        rb.linearVelocity = new Vector2(rb.linearVelocity.x, 0f);
+        rb.AddForce(Vector2.up * jumpForce, ForceMode2D.Impulse);
+
+        isJumping = true;
+        sustainTimer = jumpSustainTime;
+        jumpUsed = true;      // mark jump as used
+        bufferTimer = 0;
+        coyoteTimer = 0;
+    }
+
+    void JumpCut()
+    {
+        if (rb.linearVelocity.y > 0)
+        {
+            rb.linearVelocity = new Vector2(rb.linearVelocity.x, rb.linearVelocity.y * jumpCutMultiplier);
+        }
+
+        sustainTimer = 0;
+        isJumping = false;
+    }
 }

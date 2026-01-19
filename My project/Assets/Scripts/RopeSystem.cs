@@ -34,6 +34,11 @@ public class RopeSystem : MonoBehaviour
         playerPosition = transform.position;
         ropeHingeAnchorRb = ropeHingeAnchor.GetComponent<Rigidbody2D>();
         ropeHingeAnchorSprite = ropeHingeAnchor.GetComponent<SpriteRenderer>();
+
+        if (playerMovement == null)
+        {
+            playerMovement = GetComponent<walk>(); // if RopeSystem is on same object as walk
+        }
     }
 
     void Update()
@@ -255,6 +260,11 @@ public class RopeSystem : MonoBehaviour
     private void HandleRopeUnwrap()
 
     {
+        if (ropePositions.Count <= 1)
+        {
+            return;
+        }
+
         // Hinge = next point up from the player position
         // Anchor = next point up from the Hinge
         // Hinge Angle = Angle between anchor and hinge
@@ -277,10 +287,7 @@ public class RopeSystem : MonoBehaviour
         // 8
         var playerAngle = Vector2.Angle(anchorPosition, playerDir);
 
-        if (ropePositions.Count <= 1)
-        {
-            return;
-        }
+        
         if (playerAngle < hingeAngle)
         {
             // 1
@@ -328,6 +335,4 @@ public class RopeSystem : MonoBehaviour
         distanceSet = true;
 
     }
-
-
 }
